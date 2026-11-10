@@ -1,0 +1,14 @@
+{
+  "name": "einschulung-termin-watch",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Watches Berlin's Serviceportal for Einschulungsuntersuchung slots in Lichtenberg",
+  "scripts": {
+    "start": "node watch.mjs",
+    "once": "node watch.mjs --once"
+  },
+  "dependencies": {
+    "playwright": "^1.49.1"
+  }
+}
