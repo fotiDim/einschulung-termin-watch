@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// Watches the Berlin Serviceportal for free Einschulungsuntersuchung slots
-// at the Lichtenberg Kinder- und Jugendgesundheitsdienst.
+// Watches the Berlin Serviceportal for free appointment slots.
+//
+// Which service and location it watches comes from targets.json (see --list).
+// The default target is the Lichtenberg Einschulungsuntersuchung:
 //
 //   Service:  324254  Einschulungsuntersuchung
 //   Provider: 326385  Gesundheitsamt Lichtenberg, Alfred-Kowalke-Str. 24
@@ -11,16 +13,21 @@
 
 import { chromium } from "playwright";
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
 
-const SERVICE = process.env.ESU_SERVICE ?? "324254";
-const PROVIDER = process.env.ESU_PROVIDER ?? "326385";
-const BOOKING_URL = `https://service.berlin.de/terminvereinbarung/termin/provider/${PROVIDER}/${SERVICE}/`;
-
 const MIN_INTERVAL = 180; // Berlin's stated minimum refresh
 const BACKOFF_MINUTES = [5, 10, 20, 30];
+
+// Used when targets.json is missing, so a copy of this file alone still works.
+const FALLBACK_TARGETS = {
+  default: "lichtenberg",
+  targets: {
+    lichtenberg: { label: "Lichtenberg", service: "324254", provider: "326385" },
+  },
+};
 
 // ---------------------------------------------------------------- arguments
 
@@ -31,8 +38,29 @@ const args = {
   headful: false,
   verbose: false,
   bundled: false,
+  list: false,
+  help: false,
+  target: null,
+  service: null,
+  provider: null,
+  label: null,
   timeout: 30_000,
 };
+
+const usage = `Usage: node watch.mjs [options]
+
+  --target=NAME       target from targets.json (default: the file's "default")
+  --service=ID        override the service id of the target
+  --provider=ID|all   override the provider id, "all" = every location
+  --label=TEXT        override the label used in logs and notifications
+  --list              show the configured targets and exit
+  --interval=SECONDS  polling interval, minimum ${MIN_INTERVAL} (default ${MIN_INTERVAL})
+  --once              check once and exit (0 = check ran, 1 = check failed)
+  --no-open           do not open the booking page when a slot appears
+  --headful           show the browser window
+  --bundled           use Playwright's Chromium instead of system Chrome
+  --verbose           log the page URL/title on every check
+  --help              this text`;
 
 for (const raw of process.argv.slice(2)) {
   if (!raw.startsWith("--")) continue;
@@ -43,22 +71,83 @@ for (const raw of process.argv.slice(2)) {
     case "headful": args.headful = true; break;
     case "verbose": args.verbose = true; break;
     case "bundled": args.bundled = true; break;
+    case "list": args.list = true; break;
+    case "help": args.help = true; break;
+    case "target": args.target = value; break;
+    case "service": args.service = value; break;
+    case "provider": args.provider = value; break;
+    case "label": args.label = value; break;
     case "interval": args.interval = Math.max(MIN_INTERVAL, Number(value) || MIN_INTERVAL); break;
-    case "help":
-      console.log(`Usage: node watch.mjs [options]
-
-  --interval=SECONDS  polling interval, minimum ${MIN_INTERVAL} (default ${MIN_INTERVAL})
-  --once              check once and exit (0 = check ran, 1 = check failed)
-  --no-open           do not open the booking page when a slot appears
-  --headful           show the browser window
-  --bundled           use Playwright's Chromium instead of system Chrome
-  --verbose           log the page URL/title on every check
-  --help              this text`);
-      process.exit(0);
     default:
       console.warn(`Unknown option --${key}, ignoring`);
   }
 }
+
+if (args.help) {
+  console.log(usage);
+  process.exit(0);
+}
+
+// ------------------------------------------------------------------- targets
+
+function loadTargets() {
+  try {
+    const parsed = JSON.parse(readFileSync(new URL("./targets.json", import.meta.url), "utf8"));
+    if (!parsed?.targets || typeof parsed.targets !== "object" || Object.keys(parsed.targets).length === 0) {
+      throw new Error('no "targets" entries');
+    }
+    return parsed;
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      console.warn("targets.json not found, using the built-in Lichtenberg target");
+    } else {
+      console.warn(`targets.json ignored (${error.message}), using the built-in Lichtenberg target`);
+    }
+    return FALLBACK_TARGETS;
+  }
+}
+
+function buildBookingUrl(service, provider) {
+  const base = "https://service.berlin.de/terminvereinbarung/termin";
+  return provider === "all" ? `${base}/all/${service}/` : `${base}/provider/${provider}/${service}/`;
+}
+
+function resolveTarget(config) {
+  const name = args.target || process.env.ESU_TARGET || config.default || Object.keys(config.targets)[0];
+  const entry = config.targets[name];
+  if (!entry) {
+    console.error(`Unknown target "${name}". Available: ${Object.keys(config.targets).join(", ")}`);
+    process.exit(1);
+  }
+
+  const service = args.service || process.env.ESU_SERVICE || entry.service;
+  const provider = args.provider || process.env.ESU_PROVIDER || entry.provider;
+  const label = args.label || process.env.ESU_LABEL || entry.label || name;
+
+  if (!/^\d+$/.test(String(service ?? ""))) {
+    console.error(`Target "${name}" has no valid service id (got "${service}")`);
+    process.exit(1);
+  }
+  if (provider !== "all" && !/^\d+$/.test(String(provider ?? ""))) {
+    console.error(`Target "${name}" has no valid provider id (got "${provider}", use "all" for every location)`);
+    process.exit(1);
+  }
+
+  return { name, label, service, provider, url: buildBookingUrl(service, provider) };
+}
+
+const targets = loadTargets();
+
+if (args.list) {
+  const current = args.target || process.env.ESU_TARGET || targets.default;
+  for (const [key, entry] of Object.entries(targets.targets)) {
+    const url = buildBookingUrl(entry.service, entry.provider);
+    console.log(`${key === current ? "*" : " "} ${key.padEnd(14)} ${(entry.label ?? key).padEnd(48)} ${url}`);
+  }
+  process.exit(0);
+}
+
+const TARGET = resolveTarget(targets);
 
 // ----------------------------------------------------------------- logging
 
@@ -91,11 +180,11 @@ function dateFromHref(href) {
   return match ? isoDateFormat.format(new Date(Number(match[1]) * 1000)) : null;
 }
 
-function absoluteUrl(href) {
+function absoluteUrl(href, fallback) {
   try {
-    return href ? new URL(href, "https://service.berlin.de").toString() : BOOKING_URL;
+    return href ? new URL(href, "https://service.berlin.de").toString() : fallback;
   } catch {
-    return BOOKING_URL;
+    return fallback;
   }
 }
 
@@ -114,7 +203,7 @@ async function notify(title, message) {
 
 // ---------------------------------------------------------------- the check
 
-async function findSlots(browser) {
+async function findSlots(browser, bookingUrl) {
   const context = await browser.newContext({
     locale: "de-DE",
     timezoneId: "Europe/Berlin",
@@ -124,7 +213,7 @@ async function findSlots(browser) {
   page.setDefaultTimeout(args.timeout);
 
   try {
-    const response = await page.goto(BOOKING_URL, { waitUntil: "domcontentloaded" });
+    const response = await page.goto(bookingUrl, { waitUntil: "domcontentloaded" });
     if (response && response.status() === 403) throw new BlockedError("HTTP 403");
 
     let body = await page.locator("body").innerText().catch(() => "");
@@ -161,7 +250,7 @@ async function findSlots(browser) {
       const label = (await link.innerText().catch(() => "")).trim();
       const date = dateFromText(title) ?? dateFromHref(href);
       if (!date) continue;
-      slots.set(date, { date, href: absoluteUrl(href), label: title || label });
+      slots.set(date, { date, href: absoluteUrl(href, bookingUrl), label: title || label });
     }
 
     return [...slots.values()].sort((a, b) => a.date.localeCompare(b.date));
@@ -195,7 +284,9 @@ async function launchBrowser() {
 // --------------------------------------------------------------------- main
 
 const browser = await launchBrowser();
-log(`watching Lichtenberg ESU (service ${SERVICE}, provider ${PROVIDER}), every ${args.interval}s`);
+log(
+  `watching ${TARGET.label} (service ${TARGET.service}, provider ${TARGET.provider}), every ${args.interval}s`,
+);
 
 const seenDates = new Set();
 let blockedCount = 0;
@@ -208,7 +299,7 @@ for (;;) {
   let waitMs = args.interval * 1000 * (0.9 + Math.random() * 0.2);
 
   try {
-    const slots = await findSlots(browser);
+    const slots = await findSlots(browser, TARGET.url);
     blockedCount = 0;
 
     if (slots.length === 0) {
@@ -224,13 +315,13 @@ for (;;) {
         for (const slot of fresh) seenDates.add(slot.date);
         log(`NEW: ${fresh.map((s) => s.date).join(", ")} → ${fresh[0].href}`);
         await notify(
-          "Einschulungsuntersuchung Lichtenberg",
+          `Termin frei: ${TARGET.label}`,
           `${fresh.length} freie(r) Tag(e): ${fresh.map((s) => s.date).join(", ")}`,
         );
         // The day links (…/termin/time/<ts>/) only work inside a live portal
         // session, so always send the browser to the service page itself.
         if (args.open) {
-          await run("open", [BOOKING_URL]).catch((error) => log("could not open browser:", error.message));
+          await run("open", [TARGET.url]).catch((error) => log("could not open browser:", error.message));
         }
       } else if (args.verbose) {
         log("no new dates since the last check");

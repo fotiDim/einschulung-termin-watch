@@ -6,7 +6,8 @@
   "description": "Watches Berlin's Serviceportal for Einschulungsuntersuchung slots in Lichtenberg",
   "scripts": {
     "start": "node watch.mjs",
-    "once": "node watch.mjs --once"
+    "once": "node watch.mjs --once",
+    "list": "node watch.mjs --list"
   },
   "dependencies": {
     "playwright": "^1.49.1"
