@@ -22,7 +22,7 @@ README.md      human-facing docs
 npm install                                   # deps only; no browser download
 npm run list                                  # targets, URLs, * marks the current one
 node watch.mjs --once --verbose               # safe smoke test, ~5 s
-node watch.mjs --target=berlin --once         # service-wide target
+node watch.mjs --target=lichtenberg --once    # single-Standort target
 node watch.mjs                                # real run, polls every 180 s
 node watch.mjs --headful --verbose --once     # watch the browser, debugging
 node watch.mjs --target=nope                  # must fail with the valid names, exit 1
@@ -35,18 +35,21 @@ not run repeated checks in a tight loop.
 ## Expected smoke-test result
 
 ```
-[HH:MM:SS] watching Einschulungsuntersuchung Lichtenberg (service 324254, provider 326385), every 180s
+[HH:MM:SS] watching Einschulungsuntersuchung Berlin (alle Standorte) (service 324254, provider all), every 180s
 [HH:MM:SS] 0 slots
 ```
 
 Exit code `0` = the check ran. `1` = the check failed (WAF block, bad target, error). With
 `--verbose` the line before the result shows the final URL — `…/termin/taken/` means "no
-appointments", which is normal for the Lichtenberg provider target. Booking windows run
+appointments". The default `berlin` target currently reports bookable days, so a smoke test
+can legitimately print a list of dates and fire a notification. Use
+`--target=lichtenberg` for a quiet check; it is normally `0 slots`. Booking windows run
 Nov 2026 – Jun 2027.
 
-The `berlin` target (service-wide) can legitimately report bookable days while the
-Lichtenberg provider target reports `0 slots`; that is the site's per-Standort filter
-working, not a parser bug. Do not "fix" it by dropping the provider filter.
+The two targets differ by design: `berlin` is the service-wide search (`provider: all`),
+`lichtenberg` filters to one Standort. The service-wide search can report days while the
+Lichtenberg filter reports `0 slots`; that is the site's per-Standort filter working, not a
+parser bug. Do not "fix" it by dropping the provider filter.
 
 If you see `blocked (…)` during development, stop testing for a while. The WAF is IP-based
 and retrying aggressively makes it worse.
@@ -56,7 +59,7 @@ and retrying aggressively makes it worse.
 `targets.json`:
 
 ```json
-{ "default": "lichtenberg",
+{ "default": "berlin",
   "targets": { "<key>": { "label": "…", "service": "<dienstleistung id>",
                           "provider": "<standort id> | all" } } }
 ```
@@ -67,7 +70,8 @@ Resolution order, per field:
 2. environment `ESU_SERVICE`, `ESU_PROVIDER`, `ESU_LABEL`, `ESU_TARGET`
 3. the selected entry in `targets.json`
 4. `default` from the file, or the first entry
-5. built-in `FALLBACK_TARGETS` (Lichtenberg) if the file is missing or invalid
+5. built-in `FALLBACK_TARGETS` (service-wide `berlin`, plus `lichtenberg`) if the file is
+   missing or invalid
 
 `provider: "all"` builds `/terminvereinbarung/termin/all/<service>/`; anything else builds
 `/terminvereinbarung/termin/provider/<provider>/<service>/`.
@@ -130,11 +134,14 @@ bookable-day cell has been:
 
 ## Other districts
 
-Only districts booking through the Serviceportal can be watched. As of writing that is
-Lichtenberg. Charlottenburg-Wilmersdorf, Marzahn-Hellersdorf, Neukölln and Pankow use
-`fms.verwalt-berlin.de/esu/…` (a JSF app, closed to online booking when this was written);
-the rest have no online ESU booking. Do not bolt an FMS scraper onto this file — if the
-user wants it, that is a separate module and a separate decision.
+Only districts booking through the Serviceportal can be watched. Their Standort pages link
+either to the Serviceportal or to `fms.verwalt-berlin.de/esu/…` (a JSF app; closed to online
+booking when this was written). Charlottenburg-Wilmersdorf, Marzahn-Hellersdorf, Neukölln and
+Pankow use FMS, the rest have no online ESU booking. Do not bolt an FMS scraper onto this
+file — if the user wants it, that is a separate module and a separate decision.
+
+The default target is the service-wide search (`provider: all`), not a district. Don't
+re-introduce a district as the default unless the user asks for it explicitly.
 
 ## Before you claim it works
 

@@ -5,8 +5,12 @@ Ships with two targets:
 
 | Target | What it watches | Booking page |
 |---|---|---|
-| `lichtenberg` (default) | Einschulungsuntersuchung at the Lichtenberg Kinder- und Jugendgesundheitsdienst, Alfred-Kowalke-Str. 24 | `/provider/326385/324254/` |
-| `berlin` | Einschulungsuntersuchung at **every** Standort the Serviceportal knows (service-wide search) | `/all/324254/` |
+| `berlin` (default) | Einschulungsuntersuchung at **every** Standort the Serviceportal knows (service-wide search) | `/all/324254/` |
+| `lichtenberg` | Einschulungsuntersuchung at the Lichtenberg Kinder- und Jugendgesundheitsdienst, Alfred-Kowalke-Str. 24 | `/provider/326385/324254/` |
+
+The default is deliberately the service-wide search: it reports every bookable day the
+portal has, including days a single Standort filter misses. Pick Lichtenberg explicitly when
+you want only that Gesundheitsamt.
 
 Lichtenberg has handled ESU bookings through the Serviceportal since 2026-11-02 and
 releases slots continuously for examinations from November 2026 to June 2027.
@@ -30,14 +34,18 @@ npm run once
 ```
 
 ```
-[08:30:53] watching Einschulungsuntersuchung Lichtenberg (service 324254, provider 326385), every 180s
+[08:30:53] watching Einschulungsuntersuchung Berlin (alle Standorte) (service 324254, provider all), every 180s
 [08:30:55] 0 slots
 ```
+
+A quiet check prints `0 slots`; when the portal has days free you get the list of dates
+instead (see below).
 
 ## Choosing where to watch
 
 ```sh
-node watch.mjs --target=berlin            # service-wide instead of one Standort
+node watch.mjs                            # the default target (service-wide)
+node watch.mjs --target=lichtenberg       # only the Lichtenberg Gesundheitsamt
 node watch.mjs --list                     # list targets, * marks the current one
 node watch.mjs --target=lichtenberg --once
 ```
@@ -46,17 +54,17 @@ Everything lives in [`targets.json`](targets.json):
 
 ```json
 {
-  "default": "lichtenberg",
+  "default": "berlin",
   "targets": {
-    "lichtenberg": {
-      "label": "Einschulungsuntersuchung Lichtenberg",
-      "service": "324254",
-      "provider": "326385"
-    },
     "berlin": {
       "label": "Einschulungsuntersuchung Berlin (alle Standorte)",
       "service": "324254",
       "provider": "all"
+    },
+    "lichtenberg": {
+      "label": "Einschulungsuntersuchung Lichtenberg",
+      "service": "324254",
+      "provider": "326385"
     }
   }
 }
@@ -67,8 +75,8 @@ Everything lives in [`targets.json`](targets.json):
 - Precedence: CLI flags (`--service`, `--provider`, `--label`) → environment
   (`ESU_SERVICE`, `ESU_PROVIDER`, `ESU_LABEL`, `ESU_TARGET`) → the target entry → the
   file's `default`.
-- If `targets.json` is missing or broken, the built-in Lichtenberg target is used with a
-  warning.
+- If `targets.json` is missing or broken, a built-in copy of both targets is used (default:
+  service-wide) with a warning.
 
 ### Adding another target
 
@@ -81,15 +89,16 @@ Everything lives in [`targets.json`](targets.json):
 
 ### Which districts this covers
 
-Only districts that book through the Serviceportal can be watched here. Today that is
-Lichtenberg. Charlottenburg-Wilmersdorf, Marzahn-Hellersdorf, Neukölln and Pankow link to
-the separate FMS portal (`fms.verwalt-berlin.de/esu/`), which was closed to online booking
-when this repo was written; the remaining districts have no online ESU booking at all.
+Only districts that book through the Serviceportal can be watched here. Their Standort pages
+link either to the Serviceportal (`/terminvereinbarung/termin/provider/…`) or to the separate
+FMS portal (`fms.verwalt-berlin.de/esu/`), which was closed to online booking when this repo
+was written. Charlottenburg-Wilmersdorf, Marzahn-Hellersdorf, Neukölln and Pankow use FMS and
+are therefore out of reach; the remaining districts have no online ESU booking at all.
 
-The `berlin` target queries every Standort registered for the service, so it can report
-days even when a single provider shows none. ESU is tied to the district of your child's
-*Einzugsschule*, so those extra days may not be bookable for you — use it as an overview,
-not as a replacement for the Lichtenberg target.
+The default `berlin` target queries every Standort registered for the service, so it can
+report days even when a single provider filter shows none. ESU is tied to the district of
+your child's *Einzugsschule*, so some of those days may not be bookable for you — check the
+location before booking, or switch to `--target=lichtenberg` to only see that Gesundheitsamt.
 
 ## What happens when a slot appears
 

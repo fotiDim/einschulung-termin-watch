@@ -2,10 +2,13 @@
 // Watches the Berlin Serviceportal for free appointment slots.
 //
 // Which service and location it watches comes from targets.json (see --list).
-// The default target is the Lichtenberg Einschulungsuntersuchung:
+// The default target is the service-wide Einschulungsuntersuchung search:
 //
-//   Service:  324254  Einschulungsuntersuchung
-//   Provider: 326385  Gesundheitsamt Lichtenberg, Alfred-Kowalke-Str. 24
+//   Service: 324254  Einschulungsuntersuchung
+//   Scope:   every Standort in the Serviceportal
+//
+// The optional "lichtenberg" target narrows it to that Gesundheitsamt
+// (provider 326385, Alfred-Kowalke-Str. 24).
 //
 // The site sits behind a WAF that rejects plain HTTP clients (curl/fetch get
 // 403 "Unerwünschter Zugriff"), so a real browser is required. Playwright
@@ -23,9 +26,10 @@ const BACKOFF_MINUTES = [5, 10, 20, 30];
 
 // Used when targets.json is missing, so a copy of this file alone still works.
 const FALLBACK_TARGETS = {
-  default: "lichtenberg",
+  default: "berlin",
   targets: {
-    lichtenberg: { label: "Lichtenberg", service: "324254", provider: "326385" },
+    berlin: { label: "Einschulungsuntersuchung Berlin (alle Standorte)", service: "324254", provider: "all" },
+    lichtenberg: { label: "Einschulungsuntersuchung Lichtenberg", service: "324254", provider: "326385" },
   },
 };
 

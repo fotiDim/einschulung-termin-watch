@@ -1,15 +1,15 @@
 {
-  "default": "lichtenberg",
+  "default": "berlin",
   "targets": {
-    "lichtenberg": {
-      "label": "Einschulungsuntersuchung Lichtenberg",
-      "service": "324254",
-      "provider": "326385"
-    },
     "berlin": {
       "label": "Einschulungsuntersuchung Berlin (alle Standorte)",
       "service": "324254",
       "provider": "all"
+    },
+    "lichtenberg": {
+      "label": "Einschulungsuntersuchung Lichtenberg",
+      "service": "324254",
+      "provider": "326385"
     }
   }
 }
